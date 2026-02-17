@@ -4,7 +4,7 @@ A no_std Rust driver library for the ST7735 TFT LCD display controller
 
 [![Crates.io](https://img.shields.io/crates/v/st7735-rs.svg)](https://crates.io/crates/st7735-rs)
 [![Documentation](https://docs.rs/st7735-rs/badge.svg)](https://docs.rs/st7735-rs)
-[![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/crates/l/muses72323.svg)](https://github.com/ruimo/muses72323/blob/main/LICENSE)
 
 ## Features
 
@@ -33,79 +33,114 @@ st7735-rs = "0.1.0"
 
 ## Usage Examples
 
+The `examples/` directory contains runnable sample code demonstrating various features of this library.
+
 ### Basic Initialization
 
-```rust
-use st7735_rs::color_format::{Pixel, Pixel16, ColorFormat};
-use st7735_rs::command::{Command, Slpout, Dispon, Colmod, Caset, Raset, Ramwr};
+[examples/basic_initialization.rs](examples/basic_initialization.rs)
 
-// 1. Sleep out
-let slpout = Slpout;
-// spi.write(slpout.cmd_byte()).unwrap();
-// delay(slpout.post_delay());
+Demonstrates the basic initialization sequence for the display.
 
-// 2. Set color mode (16-bit)
-let colmod = Colmod::new(ColorFormat::Bit16);
-// spi.write(colmod.cmd_byte()).unwrap();
-// spi.write(colmod.parm_bytes()).unwrap();
+```bash
+cargo run --example basic_initialization
+```
 
-// 3. Display ON
-let dispon = Dispon;
-// spi.write(dispon.cmd_byte()).unwrap();
-// delay(dispon.post_delay());
+Example output:
+```
+Slpout command byte: 0x11
+Slpout post delay: Some(120ms)
+Colmod command byte: 0x3A
+Colmod parameter bytes: [5]
+Dispon command byte: 0x29
+Dispon post delay: Some(100ms)
+
+Basic initialization example completed successfully!
 ```
 
 ### Drawing a Rectangle
 
-```rust
-use st7735_rs::color_format::{Pixel, Pixel16};
-use st7735_rs::command::{Caset, Raset, Ramwr};
+[examples/drawing_rectangle.rs](examples/drawing_rectangle.rs)
 
-// Set drawing area (X: 0-9, Y: 0-9)
-let caset = Caset::new(0..10);
-let raset = Raset::new(0..10);
+Shows how to specify a rectangular area and fill it with a color.
 
-// Fill a 10x10 rectangle with red
-let ramwr = Ramwr::fill_rect(0..=9, 0..=9, Pixel::<Pixel16>::RED);
+```bash
+cargo run --example drawing_rectangle
+```
 
-// Send commands and parameters
-// spi.write(caset.cmd_byte()).unwrap();
-// spi.write(caset.parm_bytes()).unwrap();
-// spi.write(raset.cmd_byte()).unwrap();
-// spi.write(raset.parm_bytes()).unwrap();
-// spi.write(ramwr.cmd_byte()).unwrap();
-// spi.write(ramwr.parm_bytes()).unwrap();
+Example output:
+```
+=== Caset (Column Address Set) ===
+Command byte: 0x2A
+Parameter bytes: [0, 0, 0, 9]
+Post delay: None
+
+=== Raset (Row Address Set) ===
+Command byte: 0x2B
+Parameter bytes: [0, 0, 0, 9]
+Post delay: None
+
+=== Ramwr (Memory Write) ===
+Command byte: 0x2C
+Parameter bytes count: 200 bytes
+First 20 bytes: [F8, 00, F8, 00, F8, 00, F8, 00, F8, 00, F8, 00, F8, 00, F8, 00, F8, 00, F8, 00]
+Post delay: None
+
+Drawing rectangle example completed successfully!
 ```
 
 ### Using Custom Colors
 
-```rust
-use st7735_rs::color_format::{Pixel, Pixel16};
+[examples/custom_colors.rs](examples/custom_colors.rs)
 
-// Predefined colors
-let red = Pixel::<Pixel16>::RED;
-let green = Pixel::<Pixel16>::GREEN;
-let blue = Pixel::<Pixel16>::BLUE;
-let white = Pixel::<Pixel16>::WHITE;
-let black = Pixel::<Pixel16>::BLACK;
+Demonstrates how to use predefined colors and create custom colors.
 
-// Custom color (16-bit: R=20, G=40, B=15)
-let custom = Pixel::<Pixel16>::new(20, 40, 15);
+```bash
+cargo run --example custom_colors
+```
+
+Example output:
+```
+=== Predefined Colors ===
+RED: R=31, G=0, B=0
+GREEN: R=0, G=63, B=0
+BLUE: R=0, G=0, B=31
+WHITE: R=31, G=63, B=31
+BLACK: R=0, G=0, B=0
+
+=== Custom Color ===
+CUSTOM: R=20, G=40, B=15
+
+Custom colors example completed successfully!
 ```
 
 ### Different Color Formats
 
-```rust
-use st7735_rs::color_format::{Pixel, Pixel12, Pixel16, Pixel18};
+[examples/different_color_formats.rs](examples/different_color_formats.rs)
 
-// 12-bit mode (R,G,B: 0-15)
-let red12 = Pixel::<Pixel12>::RED;  // (15, 0, 0)
+Shows the differences between 12-bit, 16-bit, and 18-bit color formats.
 
-// 16-bit mode (R,B: 0-31, G: 0-63)
-let red16 = Pixel::<Pixel16>::RED;  // (31, 0, 0)
+```bash
+cargo run --example different_color_formats
+```
 
-// 18-bit mode (R,G,B: 0-63)
-let red18 = Pixel::<Pixel18>::RED;  // (63, 0, 0)
+Example output:
+```
+=== 12-bit Color Format (RGB 4:4:4) ===
+RED: R=15, G=0, B=0 (max: 15)
+GREEN: R=0, G=15, B=0 (max: 15)
+BLUE: R=0, G=0, B=15 (max: 15)
+
+=== 16-bit Color Format (RGB 5:6:5) ===
+RED: R=31, G=0, B=0 (R,B max: 31, G max: 63)
+GREEN: R=0, G=63, B=0 (R,B max: 31, G max: 63)
+BLUE: R=0, G=0, B=31 (R,B max: 31, G max: 63)
+
+=== 18-bit Color Format (RGB 6:6:6) ===
+RED: R=63, G=0, B=0 (max: 63)
+GREEN: R=0, G=63, B=0 (max: 63)
+BLUE: R=0, G=0, B=63 (max: 63)
+
+Different color formats example completed successfully!
 ```
 
 ## Architecture
