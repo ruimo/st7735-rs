@@ -190,8 +190,8 @@ The typical pattern for sending commands is:
 1. Send command byte via SPI
 1. Set DC pin HIGH (data mode)
 1. Send parameter bytes via SPI
-1. Wait for required delay (if any)
 1. Set CS pin HIGH.
+1. Wait for required delay (if any)
 
 Example pseudo-code:
 ```rust
