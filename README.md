@@ -4,7 +4,7 @@ A no_std Rust driver library for the ST7735 TFT LCD display controller
 
 [![Crates.io](https://img.shields.io/crates/v/st7735-rs.svg)](https://crates.io/crates/st7735-rs)
 [![Documentation](https://docs.rs/st7735-rs/badge.svg)](https://docs.rs/st7735-rs)
-[![License](https://img.shields.io/crates/l/muses72323.svg)](https://github.com/ruimo/muses72323/blob/main/LICENSE)
+[![License](https://img.shields.io/crates/l/st7735-rs.svg)](https://github.com/ruimo/st7735-rs/blob/main/LICENSE)
 
 ## Features
 
@@ -229,7 +229,7 @@ The library includes comprehensive tests for:
 
 ## License
 
-See [LICENSE](LICENSE) file for details.
+See [LICENSE](https://github.com/ruimo/st7735-rs/blob/main/LICENSE) file for details.
 
 ## Contributing
 
