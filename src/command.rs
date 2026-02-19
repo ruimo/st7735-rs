@@ -410,6 +410,114 @@ impl Iterator for PixelIterator {
   }
 }
 
+/// Iterator for generating pixel data on-demand using a function
+///
+/// This iterator computes pixel colors dynamically by calling a function
+/// for each (x, y) coordinate, converting pixels to bytes on the fly.
+pub struct DrawRectIterator<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> {
+  f: F,
+  color_format: ColorFormat,
+  x_start: u16,
+  x_end: u16,
+  y_end: u16,
+  current_x: u16,
+  current_y: u16,
+  byte_buffer: [u8; 3],
+  buffer_len: usize,
+  buffer_index: usize,
+  _marker: core::marker::PhantomData<C>,
+}
+
+impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> DrawRectIterator<C, F> {
+  fn new(
+    x_start: u16,
+    x_end: u16,
+    y_start: u16,
+    y_end: u16,
+    f: F,
+  ) -> Self {
+    Self {
+      f,
+      color_format: C::FORMAT,
+      x_start,
+      x_end,
+      y_end,
+      current_x: x_start,
+      current_y: y_start,
+      byte_buffer: [0; 3],
+      buffer_len: 0,
+      buffer_index: 0,
+      _marker: core::marker::PhantomData,
+    }
+  }
+}
+
+impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> Iterator for DrawRectIterator<C, F> {
+  type Item = u8;
+  
+  fn next(&mut self) -> Option<Self::Item> {
+    // If we have buffered bytes, return them first
+    if self.buffer_index < self.buffer_len {
+      let byte = self.byte_buffer[self.buffer_index];
+      self.buffer_index += 1;
+      return Some(byte);
+    }
+    
+    // Check if we've finished all pixels
+    if self.current_y > self.y_end {
+      return None;
+    }
+    
+    // Generate next pixel
+    let pixel = (self.f)(self.current_x, self.current_y);
+    
+    // Convert pixel to bytes based on color format
+    match self.color_format {
+      ColorFormat::Bit12 => {
+        // 12-bit: RGB 4:4:4, 2 pixels in 3 bytes
+        // We need to handle pairs of pixels
+        let r4 = pixel.r & 0x0F;
+        let g4 = pixel.g & 0x0F;
+        let b4 = pixel.b & 0x0F;
+        
+        self.byte_buffer[0] = (r4 << 4) | g4;
+        self.byte_buffer[1] = (b4 << 4) | r4;
+        self.byte_buffer[2] = (g4 << 4) | b4;
+        self.buffer_len = 3;
+      },
+      ColorFormat::Bit16 => {
+        // 16-bit: RGB 5:6:5, 1 pixel in 2 bytes
+        let r5 = (pixel.r & 0x1F) as u16;
+        let g6 = (pixel.g & 0x3F) as u16;
+        let b5 = (pixel.b & 0x1F) as u16;
+        
+        let color16 = (r5 << 11) | (g6 << 5) | b5;
+        self.byte_buffer[0] = (color16 >> 8) as u8;
+        self.byte_buffer[1] = color16 as u8;
+        self.buffer_len = 2;
+      },
+      ColorFormat::Bit18 => {
+        // 18-bit: RGB 6:6:6, 1 pixel in 3 bytes
+        self.byte_buffer[0] = pixel.r & 0x3F;
+        self.byte_buffer[1] = pixel.g & 0x3F;
+        self.byte_buffer[2] = pixel.b & 0x3F;
+        self.buffer_len = 3;
+      },
+    }
+    
+    // Advance to next pixel position
+    self.current_x += 1;
+    if self.current_x > self.x_end {
+      self.current_x = self.x_start;
+      self.current_y += 1;
+    }
+    
+    // Return first byte from buffer
+    self.buffer_index = 1;
+    Some(self.byte_buffer[0])
+  }
+}
+
 impl Ramwr<PixelIterator> {
   /// Creates a RAMWR command to fill a rectangular area with a single color
   ///
@@ -504,6 +612,67 @@ impl Ramwr<PixelIterator> {
     
     Self {
       bytes: Some(PixelIterator::new(pattern, pattern_len, total_bytes))
+    }
+  }
+  
+}
+
+impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> Ramwr<DrawRectIterator<C, F>> {
+  /// Creates a RAMWR command to draw a rectangular area using a pixel function
+  ///
+  /// This method generates pixel data on-demand by calling a function for each (x, y)
+  /// coordinate in the specified rectangle. The function is called lazily as bytes are
+  /// consumed from the iterator, making it memory-efficient.
+  ///
+  /// # Type Parameters
+  ///
+  /// * `C` - Color format marker ([`Pixel12`], [`Pixel16`], or [`Pixel18`])
+  /// * `F` - Function that takes (x, y) coordinates and returns a [`Pixel<C>`]
+  ///
+  /// # Parameters
+  ///
+  /// * `x_range` - Column range (X coordinates)
+  /// * `y_range` - Row range (Y coordinates)
+  /// * `f` - Function to generate pixel color for each coordinate
+  ///
+  /// # Panics
+  ///
+  /// Panics in 12-bit mode if the total pixel count is odd, as 12-bit mode
+  /// requires an even number of pixels (2 pixels per 3 bytes).
+  ///
+  /// # Example
+  ///
+  /// ```
+  /// use st7735_rs::command::Ramwr;
+  /// use st7735_rs::color_format::{Pixel, Pixel16};
+  ///
+  /// // Create a gradient pattern
+  /// let ramwr = Ramwr::draw_rect(0..=10, 0..=10, |x, y| {
+  ///     let intensity = ((x + y) * 2) as u8;
+  ///     Pixel::<Pixel16>::new(intensity, intensity, intensity)
+  /// });
+  /// ```
+  pub fn draw_rect(
+    x_range: impl RangeBounds<u16>,
+    y_range: impl RangeBounds<u16>,
+    f: F,
+  ) -> Self {
+    let x_start = range_start(&x_range);
+    let x_end = range_end(&x_range);
+    let y_start = range_start(&y_range);
+    let y_end = range_end(&y_range);
+    
+    let width = (x_end - x_start + 1) as usize;
+    let height = (y_end - y_start + 1) as usize;
+    let pixel_count = width * height;
+    
+    // 12-bit mode requires even pixel count
+    if matches!(C::FORMAT, ColorFormat::Bit12) && pixel_count % 2 == 1 {
+      panic!("Pixel count must be even in 12-bit mode. Current pixel count: {}", pixel_count);
+    }
+    
+    Self {
+      bytes: Some(DrawRectIterator::new(x_start, x_end, y_start, y_end, f))
     }
   }
 }
@@ -955,5 +1124,105 @@ mod tests {
     use crate::color_format::{Pixel, Pixel16};
     let mut ramwr = Ramwr::fill_rect(0..=1, 0..=1, Pixel::<Pixel16>::RED);
     assert_eq!(ramwr.post_delay(), Duration::from_millis(0));
+  }
+
+  #[test]
+  fn test_draw_rect_16bit_gradient() {
+    use crate::color_format::{Pixel, Pixel16};
+    // Create a simple 2x2 gradient where color depends on position
+    let mut ramwr = Ramwr::draw_rect(0..=1, 0..=1, |x, y| {
+      let val = (x + y) as u8;
+      Pixel::<Pixel16>::new(val, val, val)
+    });
+    
+    assert_eq!(ramwr.cmd_byte(), 0x2c);
+    let bytes: Vec<u8> = ramwr.parm_bytes().into_iter().collect();
+    
+    // (0,0): val=0 -> 0b00000_000000_00000 = 0x0000
+    // (1,0): val=1 -> 0b00001_000001_00001 = 0x0821
+    // (0,1): val=1 -> 0b00001_000001_00001 = 0x0821
+    // (1,1): val=2 -> 0b00010_000010_00010 = 0x1042
+    assert_eq!(bytes, vec![
+      0x00, 0x00, // (0,0)
+      0x08, 0x21, // (1,0)
+      0x08, 0x21, // (0,1)
+      0x10, 0x42, // (1,1)
+    ]);
+  }
+
+  #[test]
+  fn test_draw_rect_16bit_checkerboard() {
+    use crate::color_format::{Pixel, Pixel16};
+    // Create a 2x2 checkerboard pattern
+    let mut ramwr = Ramwr::draw_rect(0..=1, 0..=1, |x, y| {
+      if (x + y) % 2 == 0 {
+        Pixel::<Pixel16>::WHITE
+      } else {
+        Pixel::<Pixel16>::BLACK
+      }
+    });
+    
+    let bytes: Vec<u8> = ramwr.parm_bytes().into_iter().collect();
+    
+    // (0,0): WHITE = 0xFFFF
+    // (1,0): BLACK = 0x0000
+    // (0,1): BLACK = 0x0000
+    // (1,1): WHITE = 0xFFFF
+    assert_eq!(bytes, vec![
+      0xFF, 0xFF, // (0,0) WHITE
+      0x00, 0x00, // (1,0) BLACK
+      0x00, 0x00, // (0,1) BLACK
+      0xFF, 0xFF, // (1,1) WHITE
+    ]);
+  }
+
+  #[test]
+  fn test_draw_rect_18bit_position_based() {
+    use crate::color_format::{Pixel, Pixel18};
+    // Create a 2x1 rectangle where color is based on x position
+    let mut ramwr = Ramwr::draw_rect(0..=1, 0..=0, |x, _y| {
+      Pixel::<Pixel18>::new(x as u8 * 10, x as u8 * 20, x as u8 * 30)
+    });
+    
+    let bytes: Vec<u8> = ramwr.parm_bytes().into_iter().collect();
+    
+    // (0,0): (0, 0, 0)
+    // (1,0): (10, 20, 30)
+    assert_eq!(bytes, vec![
+      0x00, 0x00, 0x00, // (0,0)
+      0x0A, 0x14, 0x1E, // (1,0)
+    ]);
+  }
+
+  #[test]
+  fn test_draw_rect_12bit_simple() {
+    use crate::color_format::{Pixel, Pixel12};
+    // Create a 2x1 rectangle (2 pixels = even count for 12-bit)
+    let mut ramwr = Ramwr::draw_rect(0..=1, 0..=0, |x, _y| {
+      if x == 0 {
+        Pixel::<Pixel12>::RED  // (15, 0, 0)
+      } else {
+        Pixel::<Pixel12>::BLUE // (0, 0, 15)
+      }
+    });
+    
+    let bytes: Vec<u8> = ramwr.parm_bytes().into_iter().collect();
+    
+    // First pixel RED: R4=0xF, G4=0x0, B4=0x0
+    // Pattern for RED: [0xF0, 0x0F, 0x00]
+    // Second pixel BLUE: R4=0x0, G4=0x0, B4=0xF
+    // Pattern for BLUE: [0x00, 0xF0, 0x0F]
+    assert_eq!(bytes, vec![
+      0xF0, 0x0F, 0x00, // RED
+      0x00, 0xF0, 0x0F, // BLUE
+    ]);
+  }
+
+  #[test]
+  #[should_panic(expected = "Pixel count must be even in 12-bit mode")]
+  fn test_draw_rect_12bit_odd_pixel_count_panics() {
+    use crate::color_format::{Pixel, Pixel12};
+    // 3x1 = 3 pixels (odd) -> should panic
+    let _ramwr = Ramwr::draw_rect(0..=2, 0..=0, |_x, _y| Pixel::<Pixel12>::RED);
   }
 }
