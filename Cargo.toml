@@ -12,3 +12,4 @@ keywords = ["embedded", "display", "st7735", "tft", "lcd"]
 categories = ["embedded", "no-std", "hardware-support"]
 
 [dependencies]
+heapless = "0.8"

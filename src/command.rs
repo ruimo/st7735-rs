@@ -30,6 +30,7 @@
 use core::time::Duration;
 use crate::color_format::{ColorFormat, ColorFormatMarker, Pixel};
 use core::ops::RangeBounds;
+use heapless::Deque;
 
 /// Trait for ST7735 commands
 ///
@@ -422,9 +423,7 @@ pub struct DrawRectIterator<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> {
   y_end: u16,
   current_x: u16,
   current_y: u16,
-  byte_buffer: [u8; 3],
-  buffer_len: usize,
-  buffer_index: usize,
+  byte_buffer: Deque<u8, 3>,
   _marker: core::marker::PhantomData<C>,
 }
 
@@ -444,9 +443,7 @@ impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> DrawRectIterator<C, F> {
       y_end,
       current_x: x_start,
       current_y: y_start,
-      byte_buffer: [0; 3],
-      buffer_len: 0,
-      buffer_index: 0,
+      byte_buffer: Deque::new(),
       _marker: core::marker::PhantomData,
     }
   }
@@ -457,9 +454,7 @@ impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> Iterator for DrawRectIte
   
   fn next(&mut self) -> Option<Self::Item> {
     // If we have buffered bytes, return them first
-    if self.buffer_index < self.buffer_len {
-      let byte = self.byte_buffer[self.buffer_index];
-      self.buffer_index += 1;
+    if let Some(byte) = self.byte_buffer.pop_front() {
       return Some(byte);
     }
     
@@ -471,7 +466,7 @@ impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> Iterator for DrawRectIte
     // Generate next pixel
     let pixel = (self.f)(self.current_x, self.current_y);
     
-    // Convert pixel to bytes based on color format
+    // Convert pixel to bytes based on color format and push to buffer
     match self.color_format {
       ColorFormat::Bit12 => {
         // 12-bit: RGB 4:4:4, 2 pixels in 3 bytes
@@ -480,10 +475,9 @@ impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> Iterator for DrawRectIte
         let g4 = pixel.g & 0x0F;
         let b4 = pixel.b & 0x0F;
         
-        self.byte_buffer[0] = (r4 << 4) | g4;
-        self.byte_buffer[1] = (b4 << 4) | r4;
-        self.byte_buffer[2] = (g4 << 4) | b4;
-        self.buffer_len = 3;
+        let _ = self.byte_buffer.push_back((r4 << 4) | g4);
+        let _ = self.byte_buffer.push_back((b4 << 4) | r4);
+        let _ = self.byte_buffer.push_back((g4 << 4) | b4);
       },
       ColorFormat::Bit16 => {
         // 16-bit: RGB 5:6:5, 1 pixel in 2 bytes
@@ -492,16 +486,14 @@ impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> Iterator for DrawRectIte
         let b5 = (pixel.b & 0x1F) as u16;
         
         let color16 = (r5 << 11) | (g6 << 5) | b5;
-        self.byte_buffer[0] = (color16 >> 8) as u8;
-        self.byte_buffer[1] = color16 as u8;
-        self.buffer_len = 2;
+        let _ = self.byte_buffer.push_back((color16 >> 8) as u8);
+        let _ = self.byte_buffer.push_back(color16 as u8);
       },
       ColorFormat::Bit18 => {
         // 18-bit: RGB 6:6:6, 1 pixel in 3 bytes
-        self.byte_buffer[0] = pixel.r & 0x3F;
-        self.byte_buffer[1] = pixel.g & 0x3F;
-        self.byte_buffer[2] = pixel.b & 0x3F;
-        self.buffer_len = 3;
+        let _ = self.byte_buffer.push_back(pixel.r & 0x3F);
+        let _ = self.byte_buffer.push_back(pixel.g & 0x3F);
+        let _ = self.byte_buffer.push_back(pixel.b & 0x3F);
       },
     }
     
@@ -513,8 +505,7 @@ impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> Iterator for DrawRectIte
     }
     
     // Return first byte from buffer
-    self.buffer_index = 1;
-    Some(self.byte_buffer[0])
+    self.byte_buffer.pop_front()
   }
 }
 
@@ -683,7 +674,7 @@ mod tests {
 
   #[test]
   fn test_colmod_cmd_byte() {
-    let mut colmod = Colmod::new(ColorFormat::Bit16);
+    let colmod = Colmod::new(ColorFormat::Bit16);
     assert_eq!(colmod.cmd_byte(), 0x3A);
   }
 
@@ -710,7 +701,7 @@ mod tests {
 
   #[test]
   fn test_slpout_cmd_byte() {
-    let mut slpout = Slpout;
+    let slpout = Slpout;
     assert_eq!(slpout.cmd_byte(), 0x11);
   }
 
@@ -723,19 +714,19 @@ mod tests {
 
   #[test]
   fn test_colmod_post_delay() {
-    let mut colmod = Colmod::new(ColorFormat::Bit16);
+    let colmod = Colmod::new(ColorFormat::Bit16);
     assert_eq!(colmod.post_delay(), Duration::from_millis(0));
   }
 
   #[test]
   fn test_slpout_post_delay() {
-    let mut slpout = Slpout;
+    let slpout = Slpout;
     assert_eq!(slpout.post_delay(), Duration::from_millis(120));
   }
 
   #[test]
   fn test_dispon_cmd_byte() {
-    let mut dispon = Dispon;
+    let dispon = Dispon;
     assert_eq!(dispon.cmd_byte(), 0x29);
   }
 
@@ -748,13 +739,13 @@ mod tests {
 
   #[test]
   fn test_dispon_post_delay() {
-    let mut dispon = Dispon;
+    let dispon = Dispon;
     assert_eq!(dispon.post_delay(), Duration::from_millis(120));
   }
 
   #[test]
   fn test_caset_cmd_byte() {
-    let mut caset = Caset::new(0..=128);
+    let caset = Caset::new(0..=128);
     assert_eq!(caset.cmd_byte(), 0x2A);
   }
 
@@ -784,7 +775,7 @@ mod tests {
 
   #[test]
   fn test_caset_post_delay() {
-    let mut caset = Caset::new(0..=128);
+    let caset = Caset::new(0..=128);
     assert_eq!(caset.post_delay(), Duration::from_millis(0));
   }
 
@@ -854,7 +845,7 @@ mod tests {
 
   #[test]
   fn test_raset_cmd_byte() {
-    let mut raset = Raset::new(0..=128);
+    let raset = Raset::new(0..=128);
     assert_eq!(raset.cmd_byte(), 0x2B);
   }
 
@@ -884,7 +875,7 @@ mod tests {
 
   #[test]
   fn test_raset_post_delay() {
-    let mut raset = Raset::new(0..=128);
+    let raset = Raset::new(0..=128);
     assert_eq!(raset.post_delay(), Duration::from_millis(0));
   }
 
@@ -1122,7 +1113,7 @@ mod tests {
   #[test]
   fn test_fill_rect_post_delay() {
     use crate::color_format::{Pixel, Pixel16};
-    let mut ramwr = Ramwr::fill_rect(0..=1, 0..=1, Pixel::<Pixel16>::RED);
+    let ramwr = Ramwr::fill_rect(0..=1, 0..=1, Pixel::<Pixel16>::RED);
     assert_eq!(ramwr.post_delay(), Duration::from_millis(0));
   }
 
