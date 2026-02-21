@@ -199,13 +199,14 @@ Example pseudo-code:
 cs.set_low();
 dc.set_low();
 spi.write(&[command.cmd_byte()]).unwrap();
+cs.set_high();
 
 // Send parameters
+cs.set_low();
 dc.set_high();
 for byte in command.parm_bytes() {
     spi.write(&[byte]).unwrap();
 }
-
 cs.set_high();
 
 // Wait if needed
