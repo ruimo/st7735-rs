@@ -1,6 +1,6 @@
 [package]
 name = "st7735-rs"
-version = "0.1.6"
+version = "0.1.7-beta.1"
 edition = "2024"
 authors = ["Shisei Hanai <ruimo.uno@gmail.com>"]
 description = "A no_std Rust driver library for the ST7735 TFT LCD display controller"
