@@ -425,6 +425,7 @@ pub struct DrawRectIterator<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> {
   current_x: u16,
   current_y: u16,
   byte_buffer: Deque<u8, 3>,
+  pending_pixel: Option<Pixel<C>>,
   _marker: core::marker::PhantomData<C>,
 }
 
@@ -445,6 +446,7 @@ impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> DrawRectIterator<C, F> {
       current_x: x_start,
       current_y: y_start,
       byte_buffer: Deque::new(),
+      pending_pixel: None,
       _marker: core::marker::PhantomData,
     }
   }
@@ -471,14 +473,31 @@ impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> Iterator for DrawRectIte
     match self.color_format {
       ColorFormat::Bit12 => {
         // 12-bit: RGB 4:4:4, 2 pixels in 3 bytes
-        // We need to handle pairs of pixels
-        let r4 = pixel.r & 0x0F;
-        let g4 = pixel.g & 0x0F;
-        let b4 = pixel.b & 0x0F;
-        
-        let _ = self.byte_buffer.push_back((r4 << 4) | g4);
-        let _ = self.byte_buffer.push_back((b4 << 4) | r4);
-        let _ = self.byte_buffer.push_back((g4 << 4) | b4);
+        // Format: [R1R1R1R1 G1G1G1G1] [B1B1B1B1 R2R2R2R2] [G2G2G2G2 B2B2B2B2]
+        if let Some(pixel1) = self.pending_pixel.take() {
+          // We have a pending pixel, pack it with the current pixel
+          let r1 = pixel1.r & 0x0F;
+          let g1 = pixel1.g & 0x0F;
+          let b1 = pixel1.b & 0x0F;
+          let r2 = pixel.r & 0x0F;
+          let g2 = pixel.g & 0x0F;
+          let b2 = pixel.b & 0x0F;
+          
+          let _ = self.byte_buffer.push_back((r1 << 4) | g1);
+          let _ = self.byte_buffer.push_back((b1 << 4) | r2);
+          let _ = self.byte_buffer.push_back((g2 << 4) | b2);
+        } else {
+          // Store this pixel and wait for the next one
+          self.pending_pixel = Some(pixel);
+          // Advance to next pixel position
+          self.current_x += 1;
+          if self.current_x > self.x_end {
+            self.current_x = self.x_start;
+            self.current_y += 1;
+          }
+          // Recursively call next to get the second pixel
+          return self.next();
+        }
       },
       ColorFormat::Bit16 => {
         // 16-bit: RGB 5:6:5, 1 pixel in 2 bytes
@@ -1303,13 +1322,31 @@ mod tests {
     
     let bytes: Vec<u8> = ramwr.parm_bytes().into_iter().collect();
     
-    // First pixel RED: R4=0xF, G4=0x0, B4=0x0
-    // Pattern for RED: [0xF0, 0x0F, 0x00]
-    // Second pixel BLUE: R4=0x0, G4=0x0, B4=0xF
-    // Pattern for BLUE: [0x00, 0xF0, 0x0F]
+    // 12-bit mode: 2 pixels in 3 bytes
+    // Format: [R1R1R1R1 G1G1G1G1] [B1B1B1B1 R2R2R2R2] [G2G2G2G2 B2B2B2B2]
+    // RED (R=15, G=0, B=0) and BLUE (R=0, G=0, B=15)
+    // [1111 0000] [0000 0000] [0000 1111] = [0xF0, 0x00, 0x0F]
+    assert_eq!(bytes, vec![0xF0, 0x00, 0x0F]);
+  }
+
+#[test]
+  fn test_draw_rect_12bit_line() {
+    use crate::color_format::{Pixel, Pixel12};
+    // Create a 4x4 rectangle (2 pixels = even count for 12-bit)
+    let mut ramwr = Ramwr::draw_rect(0..4, 0..4, |x, y| {
+      if x == y {
+        Pixel::<Pixel12>::WHITE
+      } else {
+        Pixel::<Pixel12>::BLACK
+      }
+    });
+    
+    let bytes: Vec<u8> = ramwr.parm_bytes().into_iter().collect();
     assert_eq!(bytes, vec![
-      0xF0, 0x0F, 0x00, // RED
-      0x00, 0xF0, 0x0F, // BLUE
+      0xFF, 0xF0, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x0F, 0xFF, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0xFF, 0xF0, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x0F, 0xFF,
     ]);
   }
 
