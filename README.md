@@ -177,6 +177,42 @@ Example output:
 ✓ Function composition enables flexible pixel generation
 ```
 
+## Text Drawing
+
+### Customizing Available Characters
+
+You can specify which characters to include in the font data by adding a `[package.metadata.my_font_lib]` section to your `Cargo.toml`:
+
+```toml
+[package.metadata.my_font_lib]
+include_chars = "0123456789ABCDEFabcdef"
+```
+
+This configuration:
+- Reduces binary size by including only the characters you need
+- Characters are automatically sorted and deduplicated during build
+- Default characters if not specified: `"0123456789"`
+- Uses the `font8x8` crate's BASIC_FONTS for character bitmaps
+- Bitmaps are automatically bit-reversed for correct display orientation
+
+Example configurations:
+
+```toml
+# Numbers only (default)
+[package.metadata.my_font_lib]
+include_chars = "0123456789"
+
+# Hexadecimal digits
+[package.metadata.my_font_lib]
+include_chars = "0123456789ABCDEFabcdef"
+
+# Alphanumeric
+[package.metadata.my_font_lib]
+include_chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+```
+
+**Note**: The font generation happens at build time via `build.rs`, so you need to rebuild your project after changing the `include_chars` configuration.
+
 ## Architecture
 
 ### Type Safety
