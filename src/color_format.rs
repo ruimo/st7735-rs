@@ -48,6 +48,7 @@ pub trait ColorFormatMarker {
 ///
 /// In 12-bit mode, each color component uses 4 bits, allowing values from 0 to 15.
 /// Two pixels are packed into 3 bytes for efficient storage.
+#[derive(Clone, Copy)]
 pub struct Pixel12;
 impl ColorFormatMarker for Pixel12 {
     const FORMAT: ColorFormat = ColorFormat::Bit12;
@@ -60,6 +61,7 @@ impl ColorFormatMarker for Pixel12 {
 ///
 /// In 16-bit mode, red and blue use 5 bits (0-31), while green uses 6 bits (0-63).
 /// Each pixel occupies exactly 2 bytes. This is the most commonly used format.
+#[derive(Clone, Copy)]
 pub struct Pixel16;
 impl ColorFormatMarker for Pixel16 {
     const FORMAT: ColorFormat = ColorFormat::Bit16;
@@ -72,6 +74,7 @@ impl ColorFormatMarker for Pixel16 {
 ///
 /// In 18-bit mode, each color component uses 6 bits, allowing values from 0 to 63.
 /// Each pixel occupies 3 bytes, providing the highest color depth.
+#[derive(Clone, Copy)]
 pub struct Pixel18;
 impl ColorFormatMarker for Pixel18 {
     const FORMAT: ColorFormat = ColorFormat::Bit18;
