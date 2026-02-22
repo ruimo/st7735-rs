@@ -28,7 +28,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-st7735-rs = "0.1.4"
+st7735-rs = "0.1.5"
 ```
 
 ## Usage Examples
