@@ -12,9 +12,8 @@
 //! ## Usage Example
 //!
 //! ```rust
-//! use st7735_rs::color_format::{Pixel, Pixel16};
+//! use st7735_rs::color_format::{Pixel, Pixel16, ColorFormat};
 //! use st7735_rs::command::{Command, Slpout, Dispon, Colmod, Caset, Raset, Ramwr, draw_char};
-//! use st7735_rs::color_format::ColorFormat;
 //!
 //! // Initialization sequence
 //! let slpout = Slpout;
