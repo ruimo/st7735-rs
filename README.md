@@ -28,7 +28,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-st7735-rs = "0.1.0"
+st7735-rs = "0.1.2"
 ```
 
 ## Usage Examples
@@ -143,6 +143,40 @@ BLUE: R=0, G=0, B=63 (max: 63)
 Different color formats example completed successfully!
 ```
 
+### Drawing with Functions
+
+[examples/draw_rect_function.rs](examples/draw_rect_function.rs)
+
+Demonstrates how to use `draw_rect` with a function to create dynamic pixel patterns based on coordinates.
+
+```bash
+cargo run --example draw_rect_function
+```
+
+Example output:
+```
+=== draw_rect Function Example ===
+
+1. Gradient Pattern (2x2):
+   Generated 8 bytes
+   Bytes: [00, 00, 08, 41, 08, 41, 10, 82]
+
+2. Checkerboard Pattern (4x4):
+   Generated 32 bytes for 16 pixels
+
+3. Horizontal Gradient (8x1):
+   Generated 16 bytes
+
+4. Circular Pattern (10x10):
+   Generated 200 bytes for 100 pixels
+
+=== Key Benefits ===
+✓ No memory allocation for pixel data
+✓ Pixels computed on-demand as bytes are consumed
+✓ Efficient for large displays or complex patterns
+✓ Function composition enables flexible pixel generation
+```
+
 ## Architecture
 
 ### Type Safety
@@ -164,7 +198,12 @@ By using `PhantomData`, type information exists only at compile time with no run
 
 ### Efficient Memory Usage
 
-`fill_rect()` generates pixel data using iterators without allocating large buffers.
+Both `fill_rect()` and `draw_rect()` generate pixel data using iterators without allocating large buffers:
+
+- `fill_rect()`: Fills a rectangular area with a single color
+- `draw_rect()`: Generates pixels dynamically using a function that takes (x, y) coordinates
+
+This approach is particularly efficient for large displays or complex patterns.
 
 ## Hardware Connection
 
@@ -180,6 +219,41 @@ ST7735 displays are typically connected via SPI interface:
 | DC(A0)  | Data/Command select |
 | CS  | Chip select |
 | BL  | Backlight (optional) |
+
+## Display Control Commands
+
+### Memory Access Control (MADCTL)
+
+The `Madctl` command controls the display orientation and color order:
+
+```rust
+use st7735_rs::command::{Madctl, AddressOrder, RgbBgb};
+
+// Portrait mode (0° rotation)
+let madctl = Madctl {
+    my: AddressOrder::Normal,
+    mx: AddressOrder::Normal,
+    exchange_row_col: false,
+    ml: VerticalRefreshOrder::TopToBottom,
+    rgb_bgr: RgbBgb::Rgb,
+    mh: HorizontalRefreshOrder::LeftToRight,
+    ..Default::default()
+};
+
+// Landscape mode (90° rotation)
+let madctl = Madctl {
+    my: AddressOrder::Normal,
+    mx: AddressOrder::Reverse,
+    exchange_row_col: true,
+    ..Default::default()
+};
+```
+
+Available rotation configurations:
+- **0°**: Portrait mode (default)
+- **90°**: Landscape mode (clockwise)
+- **180°**: Portrait mode (upside down)
+- **270°**: Landscape mode (counter-clockwise)
 
 ## SPI Communication Pattern
 

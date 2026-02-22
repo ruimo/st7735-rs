@@ -13,3 +13,4 @@ categories = ["embedded", "no-std", "hardware-support"]
 
 [dependencies]
 heapless = "0.8"
+modular-bitfield = "0"

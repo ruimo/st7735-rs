@@ -27,6 +27,12 @@
 //!
 //! // Fill rectangle with red color
 //! let ramwr = Ramwr::fill_rect(0..=10, 0..=10, Pixel::<Pixel16>::RED);
+//!
+//! // Or draw with a function for dynamic patterns
+//! let ramwr = Ramwr::draw_rect(0..=10, 0..=10, |x, y| {
+//!     let intensity = ((x + y) * 2) as u8;
+//!     Pixel::<Pixel16>::new(intensity, intensity, intensity)
+//! });
 //! ```
 //!
 //! For details on how to send commands via SPI, see the [`command`] module documentation.
