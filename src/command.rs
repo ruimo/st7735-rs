@@ -688,6 +688,71 @@ impl<C: ColorFormatMarker, F: Fn(u16, u16) -> Pixel<C>> Ramwr<DrawRectIterator<C
   }
 }
 
+/// Helper function to create a RAMWR command for drawing a single character
+///
+/// This function renders an 8x8 character from the font bitmap using the
+/// existing `draw_rect()` infrastructure. Each bit in the bitmap represents
+/// a pixel: 1 for foreground color, 0 for background color.
+///
+/// The font data is searched using binary search, assuming the data is sorted
+/// by character code in ascending order.
+///
+/// # Type Parameters
+///
+/// * `C` - Color format marker ([`crate::color_format::Pixel12`], [`crate::color_format::Pixel16`], or [`crate::color_format::Pixel18`])
+///
+/// # Parameters
+///
+/// * `ch` - The character to draw
+/// * `fg_color` - Foreground color (for '1' bits in the bitmap)
+/// * `bg_color` - Background color (for '0' bits in the bitmap)
+///
+/// # Returns
+///
+/// Returns `Some(Ramwr)` if the character is found in the font data,
+/// or `None` if the character is not available.
+///
+/// # Note
+///
+/// Before calling this function, you must set the drawing area using
+/// [`Caset`] and [`Raset`] commands to define an 8x8 pixel region
+/// at the desired position.
+///
+/// # Example
+///
+/// ```
+/// use st7735_rs::command::draw_char;
+/// use st7735_rs::color_format::{Pixel, Pixel16};
+///
+/// // Draw the character '5' in white on black background
+/// if let Some(ramwr) = draw_char('5', Pixel::<Pixel16>::WHITE, Pixel::<Pixel16>::BLACK) {
+///     // Send the command via SPI
+/// }
+/// ```
+pub fn draw_char<C: ColorFormatMarker + Copy>(
+  ch: char,
+  fg_color: Pixel<C>,
+  bg_color: Pixel<C>,
+) -> Option<Ramwr<DrawRectIterator<C, impl Fn(u16, u16) -> Pixel<C>>>> {
+  // Binary search for the character in FONT_DATA (assumes sorted by char)
+  let bitmap = crate::FONT_DATA
+    .binary_search_by_key(&ch, |(c, _)| *c)
+    .ok()
+    .map(|idx| crate::FONT_DATA[idx].1)?;
+  
+  // Use draw_rect with a closure that reads from the bitmap
+  // The character is 8x8 pixels
+  Some(Ramwr::draw_rect(0..=7, 0..=7, move |px, py| {
+    let row_byte = bitmap[py as usize];
+    let bit_mask = 1 << (7 - px);
+    if (row_byte & bit_mask) != 0 {
+      fg_color
+    } else {
+      bg_color
+    }
+  }))
+}
+
 /// Address order for row/column addressing
 #[derive(Specifier)]
 pub enum AddressOrder {
@@ -794,6 +859,7 @@ impl Command for Madctl {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::color_format::{Pixel, Pixel12, Pixel16, Pixel18};
 
   #[test]
   fn test_colmod_cmd_byte() {
@@ -1563,5 +1629,213 @@ mod tests {
       .with_rgb_bgr(RgbBgb::Rgb)
       .with_mh(HorizontalRefreshOrder::LeftToRight);
     assert_eq!(madctl.post_delay(), Duration::ZERO);
+  }
+
+  #[test]
+  fn test_draw_char_16bit_found() {
+    // Test drawing character '5' which exists in FONT_DATA
+    if let Some(mut ramwr) = draw_char('5', Pixel::<Pixel16>::WHITE, Pixel::<Pixel16>::BLACK) {
+      assert_eq!(ramwr.cmd_byte(), 0x2C);
+      
+      // Verify that we get pixel data (8x8 = 64 pixels * 2 bytes = 128 bytes)
+      let bytes: Vec<u8> = ramwr.parm_bytes().into_iter().collect();
+      assert_eq!(bytes.len(), 128);
+    } else {
+      panic!("Character '5' should be found in FONT_DATA");
+    }
+  }
+
+  #[test]
+  fn test_draw_char_16bit_not_found() {
+    // Test with a character that doesn't exist in FONT_DATA
+    assert!(draw_char('あ', Pixel::<Pixel16>::WHITE, Pixel::<Pixel16>::BLACK).is_none());
+  }
+
+  #[test]
+  fn test_draw_char_bitmap_content_16bit() {
+    // Test that the bitmap is correctly rendered by comparing with FONT_DATA
+    let test_char = '1';
+    let bitmap = crate::FONT_DATA
+      .iter()
+      .find(|(c, _)| *c == test_char)
+      .map(|(_, b)| b)
+      .expect("Character '1' should exist in FONT_DATA");
+    
+    let white = Pixel::<Pixel16>::WHITE; // 0xFFFF
+    let black = Pixel::<Pixel16>::BLACK; // 0x0000
+    
+    let Some(mut ramwr) = draw_char(test_char, white, black) else {
+      panic!("Character '{}' should be found in FONT_DATA", test_char);
+    };
+    let bytes: Vec<u8> = ramwr.parm_bytes().into_iter().collect();
+    
+    // Verify each pixel matches the bitmap
+    for row in 0..8 {
+      let row_byte = bitmap[row];
+      for col in 0..8 {
+        let bit_mask = 1 << (7 - col);
+        let expected_color = if (row_byte & bit_mask) != 0 {
+          0xFFFF // white
+        } else {
+          0x0000 // black
+        };
+        
+        let pixel_index = (row * 8 + col) * 2;
+        let actual_color = ((bytes[pixel_index] as u16) << 8) | (bytes[pixel_index + 1] as u16);
+        
+        assert_eq!(
+          actual_color, expected_color,
+          "Pixel at ({}, {}) should be {:04X}, got {:04X}",
+          col, row, expected_color, actual_color
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn test_draw_char_bitmap_content_18bit() {
+    // Test 18-bit rendering with FONT_DATA
+    let test_char = '0';
+    let bitmap = crate::FONT_DATA
+      .iter()
+      .find(|(c, _)| *c == test_char)
+      .map(|(_, b)| b)
+      .expect("Character '0' should exist in FONT_DATA");
+    
+    let white = Pixel::<Pixel18>::WHITE; // R=63, G=63, B=63
+    let black = Pixel::<Pixel18>::BLACK; // R=0, G=0, B=0
+    
+    let Some(mut ramwr) = draw_char(test_char, white, black) else {
+      panic!("Character '{}' should be found in FONT_DATA", test_char);
+    };
+    let bytes: Vec<u8> = ramwr.parm_bytes().into_iter().collect();
+    
+    // 8x8 pixels * 3 bytes = 192 bytes
+    assert_eq!(bytes.len(), 192);
+    
+    // Verify each pixel matches the bitmap
+    for row in 0..8 {
+      let row_byte = bitmap[row];
+      for col in 0..8 {
+        let bit_mask = 1 << (7 - col);
+        let (expected_r, expected_g, expected_b) = if (row_byte & bit_mask) != 0 {
+          (0x3F, 0x3F, 0x3F) // white
+        } else {
+          (0x00, 0x00, 0x00) // black
+        };
+        
+        let pixel_index = (row * 8 + col) * 3;
+        let actual_r = bytes[pixel_index];
+        let actual_g = bytes[pixel_index + 1];
+        let actual_b = bytes[pixel_index + 2];
+        
+        assert_eq!(
+          (actual_r, actual_g, actual_b),
+          (expected_r, expected_g, expected_b),
+          "Pixel at ({}, {}) should be RGB({:02X},{:02X},{:02X}), got RGB({:02X},{:02X},{:02X})",
+          col, row, expected_r, expected_g, expected_b, actual_r, actual_g, actual_b
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn test_draw_char_bitmap_content_12bit() {
+    // Test 12-bit rendering with FONT_DATA
+    let test_char = '9';
+    let bitmap = crate::FONT_DATA
+      .iter()
+      .find(|(c, _)| *c == test_char)
+      .map(|(_, b)| b)
+      .expect("Character '9' should exist in FONT_DATA");
+    
+    let white = Pixel::<Pixel12>::WHITE; // R=15, G=15, B=15
+    let black = Pixel::<Pixel12>::BLACK; // R=0, G=0, B=0
+    
+    let Some(mut ramwr) = draw_char(test_char, white, black) else {
+      panic!("Character '{}' should be found in FONT_DATA", test_char);
+    };
+    let bytes: Vec<u8> = ramwr.parm_bytes().into_iter().collect();
+    
+    // Print bytes in hexadecimal format
+    println!("Bytes content (hex):");
+    for (i, byte) in bytes.iter().enumerate() {
+      println!("{:3}: 0x{:02x}", i, byte);
+    }
+    println!("Total bytes: {}", bytes.len());
+    
+    // 8x8 pixels, 2 pixels per 3 bytes = 96 bytes
+    assert_eq!(bytes.len(), 96);
+    
+    // Verify each pair of pixels matches the bitmap
+    for row in 0..8 {
+      let row_byte = bitmap[row];
+      for col_pair in 0..4 {
+        let col1 = col_pair * 2;
+        let col2 = col_pair * 2 + 1;
+        
+        let bit_mask1 = 1 << (7 - col1);
+        let bit_mask2 = 1 << (7 - col2);
+        
+        let (r1, g1, b1) = if (row_byte & bit_mask1) != 0 {
+          (0x0F, 0x0F, 0x0F) // white
+        } else {
+          (0x00, 0x00, 0x00) // black
+        };
+        
+        let (r2, g2, b2) = if (row_byte & bit_mask2) != 0 {
+          (0x0F, 0x0F, 0x0F) // white
+        } else {
+          (0x00, 0x00, 0x00) // black
+        };
+        
+        let byte_index = (row * 4 + col_pair) * 3;
+        let byte0 = bytes[byte_index];
+        let byte1 = bytes[byte_index + 1];
+        let byte2 = bytes[byte_index + 2];
+        
+        // 12-bit format: [R1R1R1R1 G1G1G1G1] [B1B1B1B1 R2R2R2R2] [G2G2G2G2 B2B2B2B2]
+        assert_eq!(byte0, (r1 << 4) | g1, "Row {}, cols {}-{}: byte 0 mismatch", row, col1, col2);
+        assert_eq!(byte1, (b1 << 4) | r2, "Row {}, cols {}-{}: byte 1 mismatch", row, col1, col2);
+        assert_eq!(byte2, (g2 << 4) | b2, "Row {}, cols {}-{}: byte 2 mismatch", row, col1, col2);
+      }
+    }
+  }
+
+  #[test]
+  fn test_draw_char_consistent_output() {
+    // Test that the same character always produces the same pixel data
+    let Some(mut r1) = draw_char('5', Pixel::<Pixel16>::WHITE, Pixel::<Pixel16>::BLACK) else {
+      panic!("Character '5' should be found");
+    };
+    let Some(mut r2) = draw_char('5', Pixel::<Pixel16>::WHITE, Pixel::<Pixel16>::BLACK) else {
+      panic!("Character '5' should be found");
+    };
+    
+    // Both should produce the same pixel data since the character is the same
+    
+    let bytes1: Vec<u8> = r1.parm_bytes().into_iter().collect();
+    let bytes2: Vec<u8> = r2.parm_bytes().into_iter().collect();
+    
+    assert_eq!(bytes1, bytes2);
+  }
+
+  #[test]
+  fn test_draw_char_all_digits() {
+    // Test that all digits 0-9 can be drawn
+    for ch in '0'..='9' {
+      assert!(
+        draw_char(ch, Pixel::<Pixel16>::WHITE, Pixel::<Pixel16>::BLACK).is_some(),
+        "Character '{}' should be found", ch
+      );
+    }
+  }
+
+  #[test]
+  fn test_draw_char_post_delay() {
+    let Some(ramwr) = draw_char('0', Pixel::<Pixel16>::WHITE, Pixel::<Pixel16>::BLACK) else {
+      panic!("Character '0' should be found");
+    };
+    assert_eq!(ramwr.post_delay(), Duration::from_millis(0));
   }
 }

@@ -13,7 +13,7 @@
 //!
 //! ```rust
 //! use st7735_rs::color_format::{Pixel, Pixel16};
-//! use st7735_rs::command::{Command, Slpout, Dispon, Colmod, Caset, Raset, Ramwr};
+//! use st7735_rs::command::{Command, Slpout, Dispon, Colmod, Caset, Raset, Ramwr, draw_char};
 //! use st7735_rs::color_format::ColorFormat;
 //!
 //! // Initialization sequence
@@ -33,6 +33,11 @@
 //!     let intensity = ((x + y) * 2) as u8;
 //!     Pixel::<Pixel16>::new(intensity, intensity, intensity)
 //! });
+//!
+//! // Draw a character from font data
+//! if let Some(ramwr) = draw_char('5', Pixel::<Pixel16>::WHITE, Pixel::<Pixel16>::BLACK) {
+//!     // Send the command via SPI
+//! }
 //! ```
 //!
 //! For details on how to send commands via SPI, see the [`command`] module documentation.
@@ -42,5 +47,9 @@
 //! - [`color_format`]: Color format and pixel definitions
 //! - [`command`]: ST7735 command implementations
 
+use std::env;
+
 pub mod color_format;
 pub mod command;
+
+include!(concat!(env!("OUT_DIR"), "/extracted_font.rs"));
