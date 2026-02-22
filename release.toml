@@ -1,16 +1,16 @@
 # cargo-release configuration
 # See: https://github.com/crate-ci/cargo-release/blob/master/docs/reference.md
 
+# Push changes and tags
+push = true
+pre-release-commit-message = "chore: Release {{crate_name}} version {{version}}"
+tag-message = "chore: Release {{crate_name}} version {{version}}"
+tag-prefix = "v"
+
 # Pre-release replacements in files
 [[pre-release-replacements]]
 file = "README.md"
 search = 'st7735-rs = "[0-9]+\.[0-9]+\.[0-9]+"'
 replace = 'st7735-rs = "{{version}}"'
 
-# Ensure we don't accidentally release with uncommitted changes
-pre-release-commit-message = "chore: Release {{crate_name}} version {{version}}"
-tag-message = "chore: Release {{crate_name}} version {{version}}"
-tag-prefix = "v"
 
-# Push changes and tags
-push = true
