@@ -179,39 +179,120 @@ Example output:
 
 ## Text Drawing
 
+### Drawing Characters
+
+The library provides two functions for drawing text characters:
+
+#### `draw_char` - Standard 8x8 Character
+
+Draws a character at its original 8x8 pixel size:
+
+```rust
+use st7735_rs::command::text::draw_char;
+use st7735_rs::color_format::{Pixel, Pixel16};
+
+// Draw '5' in white on black background (8x8 pixels)
+if let Some(ramwr) = draw_char('5', Pixel::<Pixel16>::WHITE, Pixel::<Pixel16>::BLACK) {
+    // Send the command via SPI
+}
+```
+
+#### `draw_char_scaled` - Scaled Character
+
+Draws a character with specified horizontal and vertical scale factors:
+
+```rust
+use st7735_rs::command::text::draw_char_scaled;
+use st7735_rs::color_format::{Pixel, Pixel16};
+
+// Draw '5' at 2x scale (16x16 pixels)
+if let Some(ramwr) = draw_char_scaled(
+    '5',
+    Pixel::<Pixel16>::WHITE,
+    Pixel::<Pixel16>::BLACK,
+    2,  // x scale
+    2   // y scale
+) {
+    // Send the command via SPI
+}
+
+// Draw '5' at 3x2 scale (24x16 pixels - wider but not taller)
+if let Some(ramwr) = draw_char_scaled(
+    '5',
+    Pixel::<Pixel16>::WHITE,
+    Pixel::<Pixel16>::BLACK,
+    3,  // x scale
+    2   // y scale
+) {
+    // Send the command via SPI
+}
+```
+
+**Important**: Before calling either function, you must set the drawing area using `Caset` and `Raset` commands:
+- For `draw_char`: Set an 8x8 pixel region
+- For `draw_char_scaled`: Set a (8×scale_x) × (8×scale_y) pixel region
+
 ### Customizing Available Characters
 
-You can specify which characters to include in the font data by adding a `[package.metadata.my_font_lib]` section to your `Cargo.toml`:
+You can specify which characters to include in the font data by setting the `ST7735_FONT_PATH` environment variable to point to a file containing the desired characters.
+
+**Default Characters**: If `ST7735_FONT_PATH` is not specified, the following characters are included by default:
+```
+0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ
+```
+
+Create a text file with the characters you want to display:
+
+```bash
+# Create a file with your desired characters
+echo "0123456789ABCDEFabcdef" > characters.txt
+```
+
+#### Method 1: Using Environment Variable (Full Path Required)
+
+When setting the environment variable directly, you must use an **absolute path**:
+
+```bash
+# Use full path
+export ST7735_FONT_PATH=/home/user/project/characters.txt
+cargo build
+```
+
+**Note**: Relative paths will not work when setting the environment variable directly.
+
+#### Method 2: Using .cargo/config.toml (Relative Path Supported)
+
+To use relative paths from your project directory, configure `.cargo/config.toml`:
 
 ```toml
-[package.metadata.my_font_lib]
-include_chars = "0123456789ABCDEFabcdef"
+[env]
+ST7735_FONT_PATH = { value = "characters.txt", relative = true }
 ```
+
+With `relative = true`, the path is resolved relative to your project root directory, making it easier to share the configuration across different environments and team members.
+
+### Character Set Configuration
 
 This configuration:
 - Reduces binary size by including only the characters you need
 - Characters are automatically sorted and deduplicated during build
-- Default characters if not specified: `"0123456789"`
 - Uses the `font8x8` crate's BASIC_FONTS for character bitmaps
 - Bitmaps are automatically bit-reversed for correct display orientation
 
-Example configurations:
+Example character sets:
 
-```toml
-# Numbers only (default)
-[package.metadata.my_font_lib]
-include_chars = "0123456789"
+```
+# Numbers only
+0123456789
 
 # Hexadecimal digits
-[package.metadata.my_font_lib]
-include_chars = "0123456789ABCDEFabcdef"
+0123456789ABCDEFabcdef
 
 # Alphanumeric
-[package.metadata.my_font_lib]
-include_chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
 ```
 
-**Note**: The font generation happens at build time via `build.rs`, so you need to rebuild your project after changing the `include_chars` configuration.
+**Note**: The font generation happens at build time via `build.rs`, so you need to rebuild your project after changing the character file.
 
 ## Architecture
 

@@ -1,3 +1,4 @@
+use core::panic;
 use std::env;
 use std::fs;
 use font8x8::UnicodeFonts;
@@ -5,7 +6,7 @@ use std::path::Path;
 use std::io::{Write, BufWriter};
 use std::fs::File;
 
-/// バイトのビットを左右反転する関数
+/// Function to reverse the bits of a byte (left-right flip)
 fn reverse_bits(byte: u8) -> u8 {
     let mut result = 0u8;
     for i in 0..8 {
@@ -17,22 +18,32 @@ fn reverse_bits(byte: u8) -> u8 {
 }
 
 fn main() {
-    // 1. 利用者のプロジェクトの Cargo.toml を読み込む
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    let manifest_path = std::path::Path::new(&manifest_dir).join("Cargo.toml");
-    let manifest_content = fs::read_to_string(manifest_path).unwrap();
-    
-    // 2. [package.metadata.my_font_lib] セクションを探す
-    let manifest: toml::Value = toml::from_str(&manifest_content).unwrap();
-    let target_chars = manifest
-        .get("package")
-        .and_then(|pkg| pkg.get("metadata"))
-        .and_then(|meta| meta.get("my_font_lib"))
-        .and_then(|lib| lib.get("include_chars"))
-        .and_then(|chars| chars.as_str())
-        .unwrap_or("0123456789"); // デフォルト値
+    let target_chars_string;
+    let target_chars = if let Ok(file_path_str) = env::var("ST7735_FONT_PATH") {
+        let path = Path::new(&file_path_str);
 
-    // 検索を高速にするため、文字順（Unicode順）にソートして重複を除く
+        // Check if it's an absolute path
+        if !path.is_absolute() {
+            panic!("ST7735_FONT_PATH must be an absolute path, but got: '{}'", file_path_str);
+        }
+
+        if path.exists() {
+            // Trigger rebuild when the specified file changes
+            println!("cargo:rerun-if-changed={}", file_path_str);
+
+            // Read file contents
+            target_chars_string = fs::read_to_string(path)
+                .unwrap_or_else(|_| panic!("Cannot read the ST7735_FONT_PATH: '{}'", path.display()));
+            target_chars_string.trim()
+        } else {
+            panic!("The file specified in MY_FONT_FILE_PATH does not exist: {}", file_path_str);
+        }
+    } else {
+        // Default
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    };
+
+    // Sort by character order (Unicode order) and remove duplicates for faster search
     let mut chars: Vec<char> = target_chars.chars().collect();
     chars.sort_unstable();
     chars.dedup();
@@ -41,12 +52,12 @@ fn main() {
     let dest_path = Path::new(&out_dir).join("extracted_font.rs");
     let mut f = BufWriter::new(File::create(&dest_path).unwrap());
 
-    writeln!(f, "/// 自動生成されたフォントデータ（文字, ビットマップ）").unwrap();
-    writeln!(f, "/// ビットを左右反転済み").unwrap();
+    writeln!(f, "/// Auto-generated font data (character, bitmap)").unwrap();
+    writeln!(f, "/// Bits are already reversed (left-right flipped)").unwrap();
     writeln!(f, "pub const FONT_DATA: &[(char, [u8; 8])] = &[").unwrap();
     for c in chars {
         if let Some(bitmap) = font8x8::BASIC_FONTS.get(c) {
-            // 各バイトのビットを左右反転
+            // Reverse bits of each byte (left-right flip)
             let reversed: [u8; 8] = [
                 reverse_bits(bitmap[0]),
                 reverse_bits(bitmap[1]),
@@ -62,6 +73,6 @@ fn main() {
     }
     writeln!(f, "];").unwrap();
 
-    // build.rs 自体や Feature が変わった時に再実行させる
+    // Re-run when build.rs itself or features change
     println!("cargo:rerun-if-changed=build.rs");
 }
